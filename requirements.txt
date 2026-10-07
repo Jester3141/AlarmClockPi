@@ -1,0 +1,11 @@
+Adafruit-Blinka-Raspberry-Pi5-Neopixel
+adafruit-circuitpython-busdevice
+adafruit-circuitpython-neopixel
+adafruit-circuitpython-neopixel-spi
+lgpio
+luma.core
+luma.oled
+rpi-lgpio
+rpi_ws281x
+spectra
+spidev
