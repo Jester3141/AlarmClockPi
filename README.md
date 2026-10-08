@@ -4,16 +4,32 @@
 sudo apt install swig liblgpio-dev python3-lgpio
 ```
 
-To build venv
+To build venv  (do from within the main folder)
 ```bash
-python3 -m venv venv2
-source venv2/bin/activate
+python3 -m venv venv
+source venv/bin/activate
 pip list
 pip cache purge
 pip install -r ~/work/AlarmClockPi/requirements.txt
 
 ```
 
+# Create alarmuser
+
+```bash
+sudo useradd -r -s /bin/false alarmuser
+sudo usermod -aG gpio alarmuser
+sudo usermod -aG i2c alarmuser
+sudo usermod -aG spi alarmuser
+```
+
+# Install as systemd service
+
+```bash
+sudo cp alarmclock.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now alarmclock.service
+```
 
 
 ## Pinout for LCD

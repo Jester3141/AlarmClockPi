@@ -2,7 +2,7 @@ import argparse
 from luma.core.interface.serial import spi
 from luma.core.render import canvas
 from luma.oled.device import ssd1331
-from datetime import datetime
+from datetime import datetime, timedelta
 from PIL import Image, ImageDraw, ImageFont
 
 import time
@@ -13,6 +13,8 @@ import random
 import spectra
 import sys
 import asyncio
+
+
 
 
 #######################################################################################
@@ -91,64 +93,123 @@ async def lcd_loop(task_id: int, delay: float):
 
 async def led_loop(task_id: int, delay: float):
 
+    # start with everything off
+    for i in  range(TOTAL_LEDS):
+        pixels[i] = (0, 0, 0)
+        pixels.show()
+    await asyncio.sleep(1)  # Adjust the delay to control the speed
+
+
+    # This is the defined time for individual steps
+    stepTime = 0.1
+
+    # When dim, we want to change one led at a time.  This is the time between individual LED changes
+    individualLedTime = 0.5
+
+
+    expectedMiscTime = 165
+    expectedSleepCalls = 2340
+    expectedLedSleepCalls = 2400
+
+    expectedRunTime = (expectedSleepCalls*stepTime) + (expectedLedSleepCalls * (stepTime + individualLedTime)) + expectedMiscTime
+    time_string = str(timedelta(seconds=expectedRunTime))
+    print(f"Expected runtime: {time_string}")
+
+
+    # This isa list of all of a list of the  r, g, b, sleep time tuples
+    rgbTuples = []
+
+    # we first build up the rgb tuples that we want to hit
+    firstLightStartColor = spectra.rgb(1, 0, 0) # Deep red
+    firstLightEndColor = spectra.rgb(60, 5, 0) # Horizon Glow
+    theSunAppearsStartColor = spectra.rgb(120, 30, 0)
+    theSunAppearsEndColor = spectra.rgb(255, 80, 10)
+    risingSunStartColor = spectra.rgb(255, 150, 50)
+    risingSunEndColor = spectra.rgb(255, 200, 100)
+    fullSunStartColor = spectra.rgb(255, 240, 220)
+    fullSunEndColor = spectra.rgb(255, 255, 255)
+    my_scale = spectra.scale([firstLightStartColor, 
+                            firstLightEndColor, 
+                            theSunAppearsStartColor, 
+                            theSunAppearsEndColor,
+                            risingSunStartColor,
+                            risingSunEndColor,
+                            fullSunStartColor, 
+                            fullSunEndColor,
+                            ])
+    my_range = my_scale.range(2400)
+
+    # next, for some of the dimmer transitions, we want to have it toggle individual leds to ensure a cleaner transition
+
+    lastColor = spectra.rgb(0, 0, 0)
+    for i, colorRGB in enumerate(my_range):
+        lr, lg, lb = lastColor.rgb
+        r, g, b = colorRGB.rgb
+        #print("%s, %s" % (i, colorRGB.rgb))
+        rgbs = []
+        for pixel in  range(TOTAL_LEDS):
+            sleepTime = 0
+            if pixel == TOTAL_LEDS-1:
+                sleepTime = stepTime
+            if (lr < 20 and lr < int(r)) or \
+                (lg < 20 and lg < int(g)) or \
+                (lb < 20 and lb < int(b)):
+                sleepTime = stepTime+individualLedTime
+
+            rgbs.append((r, g, b, sleepTime))
+        rgbTuples.append(rgbs)
+
+        lastColor = spectra.rgb(int(r), int(g), int(b))
+
+    # for i, rgbList in enumerate(rgbTuples):
+    #     for j, (r,g,b,s) in enumerate(rgbList):
+    #         print(f"{i}:{j}     r: {r}   g: {g}   b: {b}   s: {s}")
+
+    # Having computed all of the steps, just go through and do them.
     while True:
-        for i in  range(TOTAL_LEDS):
-            pixels[i] = (0, 0, 0)
-            pixels.show()
-        await asyncio.sleep(1)  # Adjust the delay to control the speed
+        cycleStartTime = datetime.now()
+        standardStepCalls = 0
+        ledStepCalls = 0
+        standardSleepDuration = 0
+        ledSleepDuration = 0
+        for i, rgbList in enumerate(rgbTuples):
+            for j, (r,g,b,s) in enumerate(rgbList):
+                #print(f"{i}:{j}     r: {r}   g: {g}   b: {b}   s: {s}")
+                pixels[j] = (r, g, b)
+                pixels.show()
+                if s > 0:
+                    await asyncio.sleep(s)  # Adjust the delay to control the speed
+                    if s == stepTime:
+                        standardStepCalls += 1
+                        standardSleepDuration += s
+                    elif s == stepTime+individualLedTime:
+                        ledStepCalls += 1
+                        ledSleepDuration += s
+        cycleEndTime = datetime.now()
+        cycleTimeDuration = cycleEndTime - cycleStartTime
+        print(f"Sleep Calls: {standardStepCalls}")
+        print(f"led Sleep Calls: {ledStepCalls}")
+        print(f"Sleep Duration: {standardSleepDuration}")
+        print(f"led Sleep Duration: {ledSleepDuration}")
+        print(f"Cycle Duration (seconds): {cycleTimeDuration.total_seconds()}")
 
 
-        firstLightStartColor = spectra.rgb(1, 0, 0) # Deep red
-        firstLightEndColor = spectra.rgb(60, 5, 0) # Horizon Glow
-        theSunAppearsStartColor = spectra.rgb(120, 30, 0)
-        theSunAppearsEndColor = spectra.rgb(255, 80, 10)
-        risingSunStartColor = spectra.rgb(255, 150, 50)
-        risingSunEndColor = spectra.rgb(255, 200, 100)
-        fullSunStartColor = spectra.rgb(255, 240, 220)
-        fullSunEndColor = spectra.rgb(255, 255, 255)
-        my_scale = spectra.scale([firstLightStartColor, 
-                                firstLightEndColor, 
-                                theSunAppearsStartColor, 
-                                theSunAppearsEndColor,
-                                risingSunStartColor,
-                                risingSunEndColor,
-                                fullSunStartColor, 
-                                fullSunEndColor,
-                                ])
-        my_range = my_scale.range(2400)
-
-
-        stepTime = 0.001
-        lastColor = spectra.rgb(0, 0, 0)
-        for i, colorRGB in enumerate(my_range):
-            lr, lg, lb = lastColor.rgb
-            r, g, b = colorRGB.rgb
-            print("%s, %s" % (i, colorRGB.rgb))
-            for pixel in  range(TOTAL_LEDS):
-                # pixels[i] = (255, 255, 255)
-                # pixels[i] = (255, 255, 255)
-                # pixels[i] = (255, 255, 255)
-                pixels[pixel] = (r, g, b)
-                if (lr < 20 and lr < int(r)) or \
-                   (lg < 20 and lg < int(g)) or \
-                   (lb < 20 and lb < int(b)):
-                    #print(f"slow clap lr {lr}   r {r}    lg {lg}   g {g}     lb {lb}   b {b}")
-                    pixels.show()
-                    time.sleep(stepTime+0.01)  # Adjust the delay to control the speed
-
-            pixels.show()
-            await asyncio.sleep(stepTime)  # Adjust the delay to control the speed
-            lastColor = spectra.rgb(int(r), int(g), int(b))
-        await asyncio.sleep(5)  # Adjust the delay to control the speed
 
 
 
 
 async def main():
-    async with asyncio.TaskGroup() as tg:
-        t1 = tg.create_task(lcd_loop(1, 1.0))
-        t2 = tg.create_task(led_loop(2, 0.5))
-    print(f"Results: {t1.result()}, {t2.result()}")
+    try:
+        async with asyncio.TaskGroup() as tg:
+            t1 = tg.create_task(lcd_loop(1, 1.0))
+            t2 = tg.create_task(led_loop(2, 0.5))
+        print(f"Results: {t1.result()}, {t2.result()}")
+
+    except asyncio.CancelledError as ex:
+        print("Process Cancelled (Likely sigint, sigterm, or sigkill)")
+        for pixel in  range(TOTAL_LEDS):
+            pixels[pixel] = (0, 0, 0)
+        pixels.show()
 
 
 

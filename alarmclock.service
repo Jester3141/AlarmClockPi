@@ -1,0 +1,14 @@
+[Unit]
+Description=My Python Automation Script
+After=multi-user.target
+
+[Service]
+Type=simple
+User=alarmuser
+Group=alarmuser
+WorkingDirectory=/home/mtomer/work/AlarmClockPi
+ExecStart=/home/mtomer/work/AlarmClockPi/run.sh
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
