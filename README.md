@@ -1,7 +1,11 @@
 # AlarmClockPi
 
+
+
+
+
 ```bash
-sudo apt install swig liblgpio-dev python3-lgpio
+sudo apt install apt-file vim xrdp glances swig liblgpio-dev python3-lgpio
 ```
 
 To build venv  (do from within the main folder)
@@ -22,6 +26,37 @@ sudo usermod -aG gpio alarmuser
 sudo usermod -aG i2c alarmuser
 sudo usermod -aG spi alarmuser
 ```
+
+# Setup Raspberry pi options
+
+```bash
+sudo raspi-config
+```
+
+## Enable spi 1
+
+Edit `/boot/firmware/config.txt` and add the following
+```bash
+# enable spi1
+dtoverlay=spi1-3cs
+```
+
+
+
+```bash
+# enable spi and i2c
+sudo reboot now
+```
+
+# fix permissions for service
+
+```bash
+mkdir -p ~/work
+git clone git@github.com:Jester3141/AlarmClockPi.git
+chmod a+rx /home/mtomer
+chmod a+w /home/mtomer/work/AlarmClockPi
+```
+
 
 # Install as systemd service
 
