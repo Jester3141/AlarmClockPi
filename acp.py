@@ -8,7 +8,7 @@ from luma.oled.device import ssd1331
 from datetime import datetime, timedelta
 from datetime import time as dtTime
 from PIL import Image, ImageDraw, ImageFont
-
+import adafruit_tsl2591
 import re
 import time
 import busio
@@ -46,7 +46,11 @@ spi_bus = busio.SPI(board.SCK_1, MISO=board.MISO_1)
 pixels = neopixel.NeoPixel_SPI(spi_bus, TOTAL_LEDS, pixel_order=neopixel.GRB, auto_write=False)
 
 
-
+#######################################################################################
+# LIGHT SENSOR INITIALIZATION
+##########################################################
+i2c = board.I2C()
+sensor = adafruit_tsl2591.TSL2591(i2c)
 
 class AlarmCLockRequestHandler(BaseHTTPRequestHandler):
 
@@ -176,8 +180,11 @@ async def lcd_loop(task_id: int, delay: float):
             # 3. Use canvas context manager to draw shapes and text
             with canvas(device) as draw:
 
+                lux = int(sensor.lux)
+                print(f"lux: {lux}")
                 # for now hardcoding brightness value
-                i = 60
+                #i = 60
+                i = lux
 
                 whiteMin = 7
                 whiteColor = (max(i,whiteMin), max(i,whiteMin), max(i,whiteMin))
