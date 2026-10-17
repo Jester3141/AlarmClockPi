@@ -20,11 +20,16 @@ import spectra
 import sys
 import asyncio
 import urllib
+from gpiozero import Button
 
 global httpd
 httpd = None
 global alarmTime
 alarmTime = dtTime.fromisoformat("07:00:00")
+global buttonStatePressed
+buttonStatePressed = False
+global doneWithCycle
+doneWithCycle = True
 
 
 #######################################################################################
@@ -45,6 +50,23 @@ TOTAL_LEDS = 40  # Total number of LEDs to control
 spi_bus = busio.SPI(board.SCK_1, MISO=board.MISO_1)
 pixels = neopixel.NeoPixel_SPI(spi_bus, TOTAL_LEDS, pixel_order=neopixel.GRB, auto_write=False)
 
+
+#######################################################################################
+# BUTTON INITIALIZATION
+##########################################################
+button = Button(13, pull_up=True, bounce_time=0.05) # CONNECTED TO GPIO 13
+def button_pressed():
+    print("Button was pressed!")
+    global buttonStatePressed
+    buttonStatePressed = True
+    global doneWithCycle
+    doneWithCycle = True
+def button_released():
+    print("Button released! (Pin went HIGH)")    
+    global buttonStatePressed
+    buttonStatePressed = False
+button.when_pressed = button_pressed
+button.when_released = button_released
 
 #######################################################################################
 # LIGHT SENSOR INITIALIZATION
@@ -181,7 +203,7 @@ async def lcd_loop(task_id: int, delay: float):
             with canvas(device) as draw:
 
                 lux = int(sensor.lux)
-                print(f"lux: {lux}")
+                #print(f"lux: {lux}")
                 # for now hardcoding brightness value
                 #i = 60
                 i = lux
@@ -214,6 +236,7 @@ async def lcd_loop(task_id: int, delay: float):
 
 async def led_loop(task_id: int, delay: float):
     global alarmTime
+    global doneWithCycle
 
     # start with everything off
     for i in  range(TOTAL_LEDS):
@@ -297,8 +320,11 @@ async def led_loop(task_id: int, delay: float):
     #alarmTime = dtTime.fromisoformat("22:46:00")
     while True:
         now = datetime.now().time()
-        if alarmTime.hour != now.hour or alarmTime.minute != now.minute:
+        if alarmTime.hour != now.hour or alarmTime.minute != now.minute or now.second > 5:
             print(f"now: {now} is not the correct time to start")
+            for i in  range(TOTAL_LEDS):
+                pixels[i] = (0, 0, 0)
+                pixels.show()
             await asyncio.sleep(1)
         else:
             print(f"now: {now} is the correct time to start.  STarting Cycle")
@@ -311,7 +337,11 @@ async def led_loop(task_id: int, delay: float):
                 standardSleepDuration = 0
                 ledSleepDuration = 0
                 for i, rgbList in enumerate(rgbTuples):
+                    if doneWithCycle:
+                        break
                     for j, (r,g,b,s) in enumerate(rgbList):
+                        if doneWithCycle:
+                            break
                         #print(f"{i}:{j}     r: {r}   g: {g}   b: {b}   s: {s}")
                         pixels[j] = (r, g, b)
                         pixels.show()
@@ -334,7 +364,7 @@ async def led_loop(task_id: int, delay: float):
                 while True:
                     td = datetime.now() - cycleEndTime
                     secondsToRemainAtFullBrightness = 60
-                    if td.seconds < secondsToRemainAtFullBrightness:
+                    if doneWithCycle == False and td.seconds < secondsToRemainAtFullBrightness:
                         # sleep until a button is pressed
                         await asyncio.sleep(1)
                     else:
@@ -357,11 +387,16 @@ async def main():
             t3 = tg.create_task(asyncio.to_thread(web_server_loop))
         print(f"Results: {t1.result()}, {t2.result()}, {t3.result()}")
 
+
+
     except asyncio.CancelledError as ex:
         print("Process Cancelled (Likely sigint, sigterm, or sigkill)")
         for pixel in  range(TOTAL_LEDS):
             pixels[pixel] = (0, 0, 0)
         pixels.show()
+
+        with canvas(device) as draw:
+            draw.rectangle(device.bounding_box, outline="black", fill="black")
     finally:
         global httpd
         if httpd is not None:
