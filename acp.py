@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from datetime import time as dtTime
 from PIL import Image, ImageDraw, ImageFont
 import adafruit_tsl2591
+import os
 import re
 import time
 import busio
@@ -110,6 +111,9 @@ class AlarmCLockRequestHandler(BaseHTTPRequestHandler):
                 minute = int(match.groupdict()['MINUTE'])
                 alarmTime = dtTime(hour=hour, minute=minute)
                 print(f"new alarm time set to: {alarmTime}")
+                with open("alarmTime.txt", "w") as f:
+                    f.write(alarmTime.isoformat())
+
 
         if 'runnow' in form_data:
             value = form_data['runnow'][0]
@@ -447,6 +451,19 @@ async def led_loop(task_id: int, delay: float):
 
 
 async def main():
+    global alarmTime
+    if os.path.exists("alarmTime.txt"):
+        with open("alarmTime.txt", "r") as f:
+            alarmTimeString = f.read().strip()
+            try:
+                alarmTime = dtTime.fromisoformat(alarmTimeString)
+                print(f"Loaded alarm time from file: {alarmTime}")
+            except ValueError:
+                print(f"Invalid time format in file: {alarmTimeString}. Using default time.")
+                alarmTime = dtTime.fromisoformat("07:00:00")
+    else:
+        alarmTime = dtTime.fromisoformat("07:00:00")
+
     try:
         async with asyncio.TaskGroup() as tg:
             t1 = tg.create_task(lcd_loop(1, 1.0))
