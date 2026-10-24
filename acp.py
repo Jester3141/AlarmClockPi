@@ -10,6 +10,7 @@ from datetime import time as dtTime
 from PIL import Image, ImageDraw, ImageFont
 import adafruit_tsl2591
 import os
+import traceback
 import re
 import time
 import busio
@@ -499,4 +500,12 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except Exception as e:
+        with open("error_log.txt", "w") as f:
+            f.write("\n=== CRASH LOG ===\n")
+            traceback.print_exc(file=f)
+            
+        print("An unexpected error occurred. Details written to error_log.txt.")
+        sys.exit(1)  # Signal a non-zero exit status to indicate failure    
