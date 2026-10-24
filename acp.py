@@ -30,6 +30,10 @@ global buttonStatePressed
 buttonStatePressed = False
 global doneWithCycle
 doneWithCycle = True
+global runNow
+runNow = False
+global alarmOn
+alarmOn = True
 
 
 #######################################################################################
@@ -73,12 +77,16 @@ button.when_released = button_released
 ##########################################################
 i2c = board.I2C()
 sensor = adafruit_tsl2591.TSL2591(i2c)
+sensor.gain = adafruit_tsl2591.GAIN_LOW
+sensor.integration_time = adafruit_tsl2591.INTEGRATIONTIME_100MS
 
 class AlarmCLockRequestHandler(BaseHTTPRequestHandler):
 
 
     def do_POST(self):
         global alarmTime
+        global runNow
+        global alarmOn
         # 1. Determine the size of the incoming data
         content_length = int(self.headers.get('Content-Length', 0))
         
@@ -102,6 +110,21 @@ class AlarmCLockRequestHandler(BaseHTTPRequestHandler):
                 minute = int(match.groupdict()['MINUTE'])
                 alarmTime = dtTime(hour=hour, minute=minute)
                 print(f"new alarm time set to: {alarmTime}")
+
+        if 'runnow' in form_data:
+            value = form_data['runnow'][0]
+            if value == "true":
+                runNow = True
+
+        if 'turnAlarmOn' in form_data:
+            value = form_data['turnAlarmOn'][0]
+            if value == "true":
+                alarmOn = True
+
+        if 'turnAlarmOff' in form_data:
+            value = form_data['turnAlarmOff'][0]
+            if value == "true":
+                alarmOn = False
 
         # print(f"Received POST request to {self.path}")
         # print(f"Headers:\n{self.headers}")
@@ -128,6 +151,7 @@ class AlarmCLockRequestHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         global alarmTime
+        global alarmOn
 
 
         # 1. Send the response status code
@@ -159,15 +183,52 @@ class AlarmCLockRequestHandler(BaseHTTPRequestHandler):
         </style>
         </head>
         <body>
-        <form action="/change-alarm" method="POST">
-        <label for="new-time">Choose Alarm Time:</label>
-        <input type="time" id="new-time" name="new-time" value="%s">
+        '''
 
-        <button type="submit">Submit</button>
-        </form>
+        if alarmOn:
+            response_message += '''
+            <form action="/change-alarm" method="POST">
+            <label for="new-time">Choose Alarm Time:</label>
+            <input type="time" id="new-time" name="new-time" value="%s">
+
+            <button type="submit">Set Alarm</button>
+            </form>
+            ''' % alarmTime.isoformat()
+
+            for i in range(45):
+                response_message += '<br>\n'
+
+            response_message += '''
+            <form action="/turnAlarmOff" method="POST">
+            <input type="hidden" id="turnAlarmOff" name="turnAlarmOff" value="true">
+            <button type="submit">Turn Alarm Off</button>
+            </form>
+            '''
+            for i in range(45):
+                response_message += '<br>\n'
+
+
+            
+            response_message += '''
+            <form action="/runNow" method="POST">
+            <input type="hidden" id="runnow" name="runnow" value="true">
+            <button type="submit">Run Alarm Now</button>
+            </form>
+            '''
+        else:
+            response_message += '''
+            <form action="/turnAlarmOn" method="POST">
+            <input type="hidden" id="turnAlarmOn" name="turnAlarmOn" value="true">
+            <button type="submit">Turn Alarm On</button>
+            </form>
+            </form>
+            '''
+
+
+        response_message += '''
         </body>
         </html>
-        ''' % alarmTime.isoformat()
+        '''
         self.wfile.write(response_message.encode("utf-8"))
 
 
@@ -191,6 +252,7 @@ def web_server_loop(port=8080):
 
 async def lcd_loop(task_id: int, delay: float):
     global alarmTime
+    global alarmOn
     timeFont = ImageFont.truetype("arial.ttf", 30)
     ampmFont = ImageFont.truetype("arial.ttf", 10)
     dateFont = ImageFont.truetype("arial.ttf", 14)
@@ -202,7 +264,7 @@ async def lcd_loop(task_id: int, delay: float):
             # 3. Use canvas context manager to draw shapes and text
             with canvas(device) as draw:
 
-                lux = int(sensor.lux)
+                lux = min(int(sensor.lux),137)
                 #print(f"lux: {lux}")
                 # for now hardcoding brightness value
                 #i = 60
@@ -225,8 +287,11 @@ async def lcd_loop(task_id: int, delay: float):
 
                 draw.text((0, 25), currentDateTime.strftime("%I:%M"), font=timeFont, fill=whiteColor) # put the text on the image
                 draw.text((80, 43), currentDateTime.strftime("%p"), font=ampmFont, fill=whiteColor) # put the text on the image
-                draw.text((0, 0), currentDateTime.strftime("%B %m, %Y"), font=ampmFont, fill=blueColor) # put the text on the image
-                draw.text((0, 15), alarmTime.strftime("Alarm %I:%M %p"), font=alarmFont, fill=redColor) # put the text on the image
+                draw.text((0, 0), currentDateTime.strftime("%a %B %m, %Y"), font=ampmFont, fill=blueColor) # put the text on the image
+                if alarmOn:
+                    draw.text((0, 15), alarmTime.strftime("Alarm %I:%M %p"), font=alarmFont, fill=redColor) # put the text on the image
+                else:
+                    draw.text((0, 15), alarmTime.strftime("                       "), font=alarmFont, fill=redColor) # put the text on the image
 
                 #draw.text((0, 25), "%s" % i, font=debugFont, fill=whiteColor) # put the text on the image
 
@@ -237,6 +302,7 @@ async def lcd_loop(task_id: int, delay: float):
 async def led_loop(task_id: int, delay: float):
     global alarmTime
     global doneWithCycle
+    global runNow
 
     # start with everything off
     for i in  range(TOTAL_LEDS):
@@ -320,13 +386,14 @@ async def led_loop(task_id: int, delay: float):
     #alarmTime = dtTime.fromisoformat("22:46:00")
     while True:
         now = datetime.now().time()
-        if alarmTime.hour != now.hour or alarmTime.minute != now.minute or now.second > 5:
+        if (alarmTime.hour != now.hour or alarmTime.minute != now.minute or now.second > 5) and not runNow:
             print(f"now: {now} is not the correct time to start")
             for i in  range(TOTAL_LEDS):
                 pixels[i] = (0, 0, 0)
                 pixels.show()
             await asyncio.sleep(1)
         else:
+            runNow = False
             print(f"now: {now} is the correct time to start.  STarting Cycle")
             doneWithCycle = False
             # Having computed all of the steps, just go through and do them.
