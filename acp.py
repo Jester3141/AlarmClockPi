@@ -37,6 +37,16 @@ runNow = False
 global alarmOn
 alarmOn = True
 
+global gr
+gr = 0
+global gg
+gg = 0
+global gb
+gb = 0
+
+global debugMode
+debugMode = False
+
 
 #######################################################################################
 # LCD INITIALIZATION
@@ -255,14 +265,20 @@ def web_server_loop(port=8080):
 
 
 
-async def lcd_loop(task_id: int, delay: float):
+async def lcd_loop():
     global alarmTime
     global alarmOn
+    global gr
+    global gg
+    global gb
+
+
     timeFont = ImageFont.truetype("arial.ttf", 30)
     ampmFont = ImageFont.truetype("arial.ttf", 10)
     dateFont = ImageFont.truetype("arial.ttf", 14)
     alarmFont = ImageFont.truetype("arial.ttf", 12)
     debugFont = ImageFont.truetype("arial.ttf", 12)
+    rgbFont = ImageFont.truetype("arial.ttf", 11)
 
     while True:
         for i in range(0,255):
@@ -293,7 +309,9 @@ async def lcd_loop(task_id: int, delay: float):
                 draw.text((0, 25), currentDateTime.strftime("%I:%M"), font=timeFont, fill=whiteColor) # put the text on the image
                 draw.text((80, 43), currentDateTime.strftime("%p"), font=ampmFont, fill=whiteColor) # put the text on the image
                 draw.text((0, 0), currentDateTime.strftime("%a %B %m, %Y"), font=ampmFont, fill=blueColor) # put the text on the image
-                if alarmOn:
+                if doneWithCycle == False:  # if alarm currently running, show the current color of the led strip
+                    draw.text((0, 15), "R:%s G:%s B:%s" % (int(gr), int(gg), int(gb)), font=rgbFont, fill=whiteColor) # put the text on the image
+                elif alarmOn:
                     draw.text((0, 15), alarmTime.strftime("Alarm %I:%M %p"), font=alarmFont, fill=redColor) # put the text on the image
                 else:
                     draw.text((0, 15), alarmTime.strftime("                       "), font=alarmFont, fill=redColor) # put the text on the image
@@ -304,23 +322,32 @@ async def lcd_loop(task_id: int, delay: float):
 
 
 
-async def led_loop(task_id: int, delay: float):
+async def led_loop():
     global alarmTime
     global doneWithCycle
     global runNow
+    global gr
+    global gg
+    global gb
+    global debugMode
 
     # start with everything off
     for i in  range(TOTAL_LEDS):
         pixels[i] = (0, 0, 0)
+        (gr, gg, gb) = (0, 0, 0)
         pixels.show()
     await asyncio.sleep(1)  # Adjust the delay to control the speed
 
 
     # This is the defined time for individual steps
     stepTime = 0.1
+    if debugMode:
+        stepTime = 0.001
 
     # When dim, we want to change one led at a time.  This is the time between individual LED changes
     individualLedTime = 0.5
+    if debugMode:
+        individualLedTime = 0.001
 
 
     expectedMiscTime = 165
@@ -354,6 +381,9 @@ async def led_loop(task_id: int, delay: float):
                             fullSunEndColor,
                             ])
     my_range = my_scale.range(2400)
+    if debugMode:
+        my_range = my_scale.range(250)
+
 
     ###############################
     ## DEBUG VALUES
@@ -395,6 +425,7 @@ async def led_loop(task_id: int, delay: float):
             print(f"now: {now} is not the correct time to start")
             for i in  range(TOTAL_LEDS):
                 pixels[i] = (0, 0, 0)
+                (gr, gg, gb) = (0, 0, 0)
                 pixels.show()
             await asyncio.sleep(1)
         else:
@@ -416,6 +447,7 @@ async def led_loop(task_id: int, delay: float):
                             break
                         #print(f"{i}:{j}     r: {r}   g: {g}   b: {b}   s: {s}")
                         pixels[j] = (r, g, b)
+                        (gr, gg, gb) = (r, g, b)
                         pixels.show()
                         if s > 0:
                             await asyncio.sleep(s)  # Adjust the delay to control the speed
@@ -432,10 +464,11 @@ async def led_loop(task_id: int, delay: float):
                 print(f"Sleep Duration: {standardSleepDuration}")
                 print(f"led Sleep Duration: {ledSleepDuration}")
                 print(f"Cycle Duration (seconds): {cycleTimeDuration.total_seconds()}")
+                secondsToRemainAtFullBrightness = 60 * 30  # 30 minutes
+                print(f"Staying at full brighness for (in seconds): {secondsToRemainAtFullBrightness}")
 
                 while True:
                     td = datetime.now() - cycleEndTime
-                    secondsToRemainAtFullBrightness = 60
                     if doneWithCycle == False and td.seconds < secondsToRemainAtFullBrightness:
                         # sleep until a button is pressed
                         await asyncio.sleep(1)
@@ -443,6 +476,7 @@ async def led_loop(task_id: int, delay: float):
                         doneWithCycle = True
                         for i in  range(TOTAL_LEDS):
                             pixels[i] = (0, 0, 0)
+                            (gr, gg, gb) = (0, 0, 0)
                             pixels.show()
                         break
 
@@ -453,6 +487,11 @@ async def led_loop(task_id: int, delay: float):
 
 async def main():
     global alarmTime
+    global gr
+    global gg
+    global gb
+
+
     if os.path.exists("alarmTime.txt"):
         with open("alarmTime.txt", "r") as f:
             alarmTimeString = f.read().strip()
@@ -467,8 +506,8 @@ async def main():
 
     try:
         async with asyncio.TaskGroup() as tg:
-            t1 = tg.create_task(lcd_loop(1, 1.0))
-            t2 = tg.create_task(led_loop(2, 0.5))
+            t1 = tg.create_task(lcd_loop())
+            t2 = tg.create_task(led_loop())
             t3 = tg.create_task(asyncio.to_thread(web_server_loop))
         print(f"Results: {t1.result()}, {t2.result()}, {t3.result()}")
 
@@ -478,6 +517,7 @@ async def main():
         print("Process Cancelled (Likely sigint, sigterm, or sigkill)")
         for pixel in  range(TOTAL_LEDS):
             pixels[pixel] = (0, 0, 0)
+            (gr, gg, gb) = (0, 0, 0)
         pixels.show()
 
         with canvas(device) as draw:
