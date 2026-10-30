@@ -330,6 +330,7 @@ async def led_loop():
     global gg
     global gb
     global debugMode
+    global alarmOn
 
     # start with everything off
     for i in  range(TOTAL_LEDS):
@@ -421,14 +422,7 @@ async def led_loop():
     #alarmTime = dtTime.fromisoformat("22:46:00")
     while True:
         now = datetime.now().time()
-        if (alarmTime.hour != now.hour or alarmTime.minute != now.minute or now.second > 5) and not runNow:
-            print(f"now: {now} is not the correct time to start")
-            for i in  range(TOTAL_LEDS):
-                pixels[i] = (0, 0, 0)
-                (gr, gg, gb) = (0, 0, 0)
-                pixels.show()
-            await asyncio.sleep(1)
-        else:
+        if ((alarmTime.hour == now.hour and alarmTime.minute == now.minute and now.second < 5) and alarmOn) or runNow:
             runNow = False
             print(f"now: {now} is the correct time to start.  STarting Cycle")
             doneWithCycle = False
@@ -479,6 +473,13 @@ async def led_loop():
                             (gr, gg, gb) = (0, 0, 0)
                             pixels.show()
                         break
+        else:
+            print(f"now: {now} is not the correct time to start")
+            for i in  range(TOTAL_LEDS):
+                pixels[i] = (0, 0, 0)
+                (gr, gg, gb) = (0, 0, 0)
+                pixels.show()
+            await asyncio.sleep(1)
 
 
 
